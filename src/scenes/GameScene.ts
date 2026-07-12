@@ -16,6 +16,8 @@ import {
 } from '../config/GameData';
 import { Economy } from '../systems/Economy';
 import { EraManager } from '../systems/EraManager';
+import { SaveManager } from '../systems/SaveManager';
+import { playBuildSound, playEraSound, playEventSound, playWinSound, playLoseSound, resumeAudio } from '../systems/SoundManager';
 
 interface PlacedBuilding {
   config: BuildingConfig;
@@ -69,6 +71,9 @@ export class GameScene extends Phaser.Scene {
 
   // Game over
   gameOver = false;
+
+  // Tutorial
+  tutorialCompleted = false;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -153,6 +158,68 @@ export class GameScene extends Phaser.Scene {
     };
 
     // UIScene accesses economy/eraManager directly
+
+    // Resume audio on first click
+    this.input.on('pointerdown', () => resumeAudio(), this);
+
+    // Load saved game if exists
+    this.loadGame();
+  }
+
+  private loadGame(): void {
+    const save = SaveManager.load();
+    if (!save) return;
+
+    // Restore economy
+    this.economy.state.resources = { ...save.resources };
+    this.economy.state.tickCount = save.tickCount;
+
+    // Restore era
+    const savedEra = ERAS.find(e => e.id === save.eraId);
+    if (savedEra && savedEra.id !== this.eraManager.getEra().id) {
+      // Advance era to match saved state
+      while (this.eraManager.getEra().id < save.eraId && this.eraManager.canAdvance()) {
+        this.eraManager.advance();
+      }
+      // Redraw world for current era
+      this.skyGraphics.destroy();
+      this.bgMountains.destroy();
+      this.bgSkyline.destroy();
+      this.groundGraphics.destroy();
+      this.gridGraphics.destroy();
+      this.drawSky();
+      this.drawMountains();
+      this.drawGround();
+      this.drawGrid();
+    }
+
+    // Restore buildings
+    for (const bd of save.buildings) {
+      const config = this.getBuildingById(bd.id);
+      if (config) {
+        const container = this.createBuildingSprite(bd.x, bd.y, config);
+        this.buildings.push({ config, x: bd.x, y: bd.y, sprite: container });
+      }
+    }
+
+    // Recalculate economy from restored buildings
+    this.economy.recalculate(this.buildings.map(b => b.config));
+
+    // Restore tutorial state
+    this.tutorialCompleted = save.tutorialCompleted;
+
+    // Spawn workers for each building
+    for (const b of this.buildings) {
+      if (b.config.workersRequired > 0) {
+        this.spawnWorkerForBuilding(b.config.id, b.x + 40, b.y + b.config.height * 80 - 32);
+      }
+    }
+    // Add a few free-roaming workers
+    if (this.workers.length < 5) {
+      for (let i = this.workers.length; i < 5; i++) {
+        this.spawnWorker(200 + i * 100, GROUND_Y - 32);
+      }
+    }
   }
 
   update(time: number, _delta: number): void {
@@ -339,6 +406,12 @@ export class GameScene extends Phaser.Scene {
       sprite: container,
     });
 
+    // Construction particles
+    this.spawnConstructionParticles(cx, cy, this.selectedBuilding);
+
+    // Sound
+    playBuildSound();
+
     // Recalculate economy
     this.economy.recalculate(this.buildings.map(b => b.config));
 
@@ -357,36 +430,94 @@ export class GameScene extends Phaser.Scene {
     const bw = config.width * TILE_SIZE;
     const bh = config.height * TILE_SIZE;
 
-    // Main building body
+    // Main building body with drop shadow
+    const shadow = this.add.graphics();
+    shadow.fillStyle(0x000000, 0.2);
+    shadow.fillRect(3, 3, bw, bh);
+    container.add(shadow);
+
     const body = this.add.graphics();
     const darkerColor = Phaser.Display.Color.ValueToColor(config.color).darken(20).color;
+    const lighterColor = Phaser.Display.Color.ValueToColor(config.color).lighten(15).color;
+    const accentColor = this.eraManager.getEra().buildingAccent;
+
+    // Main building body
     body.fillStyle(config.color, 1);
     body.fillRect(0, 0, bw, bh);
-    // Building border
+    // Border with slight bevel
+    body.lineStyle(1, lighterColor, 0.5);
+    body.strokeRect(1, 1, bw - 2, bh - 2);
     body.lineStyle(2, darkerColor, 1);
     body.strokeRect(0, 0, bw, bh);
 
-    // Roof
-    body.fillStyle(darkerColor, 1);
-    body.fillRect(4, 0, bw - 8, 8);
+    // Category-specific roof styling
+    if (config.category === 'industrial') {
+      // Sawtooth roof
+      body.fillStyle(darkerColor, 1);
+      body.fillRect(0, 0, bw, 10);
+      for (let sx = 0; sx < bw; sx += 30) {
+        body.fillTriangle(sx, 0, sx + 15, -14, sx + 30, 0);
+      }
+      // Smokestack
+      body.fillStyle(0x444444, 1);
+      body.fillRect(bw - 20, -24, 10, 24);
+      body.fillStyle(0x333333, 1);
+      body.fillRect(bw - 22, -26, 14, 4);
+      // Smoke puff
+      body.fillStyle(0x888888, 0.4);
+      body.fillCircle(bw - 15, -32, 6);
+      body.fillStyle(0x888888, 0.25);
+      body.fillCircle(bw - 10, -38, 8);
+    } else if (config.category === 'residential') {
+      // Pitched roof
+      body.fillStyle(darkerColor, 1);
+      body.fillTriangle(0, 2, bw / 2, -16, bw, 2);
+      body.fillRect(2, -14, bw - 4, 12);
+    } else if (config.category === 'commercial') {
+      // Flat modern roof with accent stripe
+      body.fillStyle(accentColor, 0.8);
+      body.fillRect(0, 0, bw, 6);
+      body.fillStyle(darkerColor, 1);
+      body.fillRect(2, -4, bw - 4, 6);
+    } else if (config.category === 'institutional') {
+      // Domed/curved top
+      body.fillStyle(darkerColor, 1);
+      body.fillRect(0, 0, bw, 8);
+      body.fillStyle(accentColor, 0.6);
+      body.fillRect(bw / 2 - 12, -6, 24, 6);
+    } else if (config.category === 'infrastructure') {
+      // Low flat structure
+      body.fillStyle(darkerColor, 1);
+      body.fillRect(0, 0, bw, 4);
+      body.lineStyle(2, accentColor, 0.6);
+      body.lineBetween(0, 2, bw, 2);
+    }
 
-    // Windows
+    // Windows — sized and spaced proportionally
     const winColor = Phaser.Display.Color.ValueToColor(config.color).lighten(40).color;
-    body.fillStyle(winColor, 0.7);
-    const cols = Math.floor(bw / 20);
-    const rows = Math.floor(bh / 30);
-    for (let c = 0; c < cols; c++) {
-      for (let r = 0; r < rows; r++) {
-        if (r === 0) continue; // skip roof row
-        body.fillRect(10 + c * 20, 16 + r * 30, 8, 10);
+    body.fillStyle(winColor, 0.8);
+    const colCount = Math.max(1, Math.floor(bw / 25));
+    const rowCount = Math.max(1, Math.floor((bh - 12) / 28));
+    const winW = Math.min(12, (bw - 8) / colCount - 6);
+    const winH = Math.min(14, (bh - 20) / rowCount - 6);
+    for (let c = 0; c < colCount; c++) {
+      for (let r = 0; r < rowCount; r++) {
+        const wx = 8 + c * (bw / colCount);
+        const wy = 14 + r * ((bh - 12) / rowCount);
+        body.fillRect(wx, wy, winW, winH);
+        // Window frame
+        body.lineStyle(1, darkerColor, 0.4);
+        body.strokeRect(wx, wy, winW, winH);
       }
     }
 
-    // Chimney/smokestack for industrial
-    if (config.category === 'industrial') {
-      body.fillStyle(0x444444, 1);
-      body.fillRect(bw - 16, -20, 8, 20);
-    }
+    // Door
+    body.fillStyle(darkerColor, 0.8);
+    const doorW = Math.min(16, bw / 3);
+    const doorH = Math.min(22, bh / 2);
+    body.fillRect(bw / 2 - doorW / 2, bh - doorH, doorW, doorH);
+    body.lineStyle(1, 0x000000, 0.3);
+    body.strokeRect(bw / 2 - doorW / 2, bh - doorH, doorW, doorH);
 
     container.add(body);
 
@@ -492,6 +623,17 @@ export class GameScene extends Phaser.Scene {
 
     // Emit tick data to UI
     this.events.emit('tick', this.economy.state, this.eraManager.getEra());
+
+    // Auto-save every 5 ticks
+    if (this.economy.state.tickCount % 5 === 0) {
+      SaveManager.autoSave(
+        this.economy.state.resources,
+        this.economy.state.tickCount,
+        this.eraManager.getEra().id,
+        this.buildings.map(b => ({ id: b.config.id, x: b.x, y: b.y })),
+        this.tutorialCompleted
+      );
+    }
   }
 
   private checkWinLossConditions(): { type: 'win' | 'lose'; message: string } | null {
@@ -500,6 +642,7 @@ export class GameScene extends Phaser.Scene {
 
     // Win: Reach Era 5 with high knowledge and trust
     if (eraIdx >= 4 && s.resources.knowledge >= 500 && s.resources.trust >= 800) {
+      playWinSound();
       return {
         type: 'win',
         message: 'Your town has transformed from post-Soviet decay into a globally competitive innovation hub. The Eastern Frontier is no longer a frontier — it\'s a destination.'
@@ -509,6 +652,7 @@ export class GameScene extends Phaser.Scene {
     // Lose: All resources at zero
     const allZero = (Object.keys(s.resources) as ResourceType[]).every(r => s.resources[r] <= 0);
     if (allZero) {
+      playLoseSound();
       return {
         type: 'lose',
         message: 'Economic collapse. All resources depleted. The town could not survive the transition. History will record another failed post-Soviet economy.'
@@ -530,6 +674,7 @@ export class GameScene extends Phaser.Scene {
     if (Math.random() < event.probability) {
       this.activeEvent = event;
       this.eventActive = true;
+      playEventSound();
       this.events.emit('event-triggered', event);
     }
   }
@@ -579,6 +724,68 @@ export class GameScene extends Phaser.Scene {
 
     // Flash effect
     this.cameras.main.flash(500, 255, 255, 255);
+
+    // Era transition particles
+    this.spawnEraParticles();
+
+    // Sound
+    playEraSound();
+  }
+
+  // ==== PARTICLE EFFECTS ====
+
+  private spawnConstructionParticles(x: number, y: number, config: BuildingConfig): void {
+    const bw = config.width * TILE_SIZE;
+    const bh = config.height * TILE_SIZE;
+    const cx = x + bw / 2;
+    const cy = y + bh / 2;
+
+    for (let i = 0; i < 12; i++) {
+      const px = cx + (Math.random() - 0.5) * bw;
+      const py = cy + (Math.random() - 0.5) * bh;
+      const particle = this.add.graphics();
+      particle.setDepth(50);
+      const size = 3 + Math.random() * 5;
+      const color = Phaser.Display.Color.GetColor(
+        200 + Math.floor(Math.random() * 55),
+        180 + Math.floor(Math.random() * 55),
+        100 + Math.floor(Math.random() * 55)
+      );
+      particle.fillStyle(color, 0.8);
+      particle.fillRect(0, 0, size, size);
+
+      this.tweens.add({
+        targets: particle,
+        x: px + (Math.random() - 0.5) * 60,
+        y: py - 20 - Math.random() * 40,
+        alpha: 0,
+        duration: 400 + Math.random() * 300,
+        ease: 'Power2',
+        onComplete: () => particle.destroy(),
+      });
+    }
+  }
+
+  private spawnEraParticles(): void {
+    const cam = this.cameras.main;
+    for (let i = 0; i < 30; i++) {
+      const px = cam.scrollX + Math.random() * 1280;
+      const py = Math.random() * 520;
+      const particle = this.add.graphics();
+      particle.setDepth(100);
+      const size = 2 + Math.random() * 6;
+      particle.fillStyle(0xffd700, 0.7);
+      particle.fillRect(0, 0, size, size);
+
+      this.tweens.add({
+        targets: particle,
+        y: py + 100 + Math.random() * 200,
+        alpha: 0,
+        duration: 800 + Math.random() * 600,
+        ease: 'Power1',
+        onComplete: () => particle.destroy(),
+      });
+    }
   }
 
   // ==== GETTERS FOR UIScene ====

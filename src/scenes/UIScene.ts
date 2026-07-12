@@ -86,27 +86,31 @@ export class UIScene extends Phaser.Scene {
 
     // Resource displays
     const resources: { type: ResourceType; label: string; color: number; x: number }[] = [
-      { type: 'labor', label: '👥 Labor', color: 0xff9966, x: 20 },
-      { type: 'capital', label: '💰 Capital', color: 0xffd700, x: 220 },
-      { type: 'materials', label: '🏗️ Materials', color: 0x8b7355, x: 420 },
-      { type: 'knowledge', label: '📚 Knowledge', color: 0x66ccff, x: 620 },
-      { type: 'trust', label: '🤝 Trust', color: 0x66ff99, x: 820 },
+      { type: 'labor', label: 'LABOR', color: 0xff9966, x: 20 },
+      { type: 'capital', label: 'CAPITAL', color: 0xffd700, x: 220 },
+      { type: 'materials', label: 'MATERIALS', color: 0x8b7355, x: 420 },
+      { type: 'knowledge', label: 'KNOWLEDGE', color: 0x66ccff, x: 620 },
+      { type: 'trust', label: 'TRUST', color: 0x66ff99, x: 820 },
     ];
 
     for (const res of resources) {
       const icon = this.add.graphics();
       icon.setDepth(201);
-      icon.fillStyle(res.color, 0.3);
-      icon.fillRoundedRect(res.x, 34, 180, 22, 4);
+      // Colored left accent bar
+      icon.fillStyle(res.color, 0.9);
+      icon.fillRoundedRect(res.x, 36, 4, 18, 2);
+      // Subtle background panel
+      icon.fillStyle(0xffffff, 0.05);
+      icon.fillRoundedRect(res.x + 4, 34, 176, 22, 4);
 
-      const label = this.add.text(res.x + 8, 37, res.label, {
+      const label = this.add.text(res.x + 14, 37, res.label, {
         fontFamily: 'monospace',
-        fontSize: '11px',
-        color: '#cccccc',
+        fontSize: '10px',
+        color: '#999999',
       });
       label.setDepth(201);
 
-      const value = this.add.text(res.x + 80, 37, `${this.economy.state.resources[res.type]}`, {
+      const value = this.add.text(res.x + 90, 37, `${this.economy.state.resources[res.type]}`, {
         fontFamily: 'monospace',
         fontSize: '12px',
         color: '#ffffff',
@@ -114,7 +118,7 @@ export class UIScene extends Phaser.Scene {
       });
       value.setDepth(201);
 
-      const rate = this.add.text(res.x + 130, 37, '', {
+      const rate = this.add.text(res.x + 140, 37, '', {
         fontFamily: 'monospace',
         fontSize: '9px',
       });
@@ -179,7 +183,7 @@ export class UIScene extends Phaser.Scene {
     bg.lineStyle(1, 0xd4a017, 0.8);
     bg.strokeRoundedRect(0, 0, 135, 28, 4);
 
-    this.eraButtonLabel = this.add.text(67, 14, 'Advance Era ▶', {
+    this.eraButtonLabel = this.add.text(67, 14, 'Advance Era', {
       fontFamily: 'monospace',
       fontSize: '11px',
       color: '#d4a017',
@@ -453,7 +457,7 @@ export class UIScene extends Phaser.Scene {
       if (!d) continue;
       d.value.setText(`${Math.floor(s.resources[res])}`);
       const rate = s.rates[res];
-      d.rate.setText(rate >= 0 ? `+${rate}/t` : `${rate}/t`);
+      d.rate.setText(rate >= 0 ? `\u2191${rate}/t` : `\u2193${Math.abs(rate)}/t`);
       d.rate.setColor(rate >= 0 ? '#66ff66' : '#ff6666');
     }
   }
@@ -468,11 +472,11 @@ export class UIScene extends Phaser.Scene {
       this.eraProgressText.setText('');
       this.eraButton.setAlpha(0.5);
     } else if (canAdvance) {
-      this.eraButtonLabel.setText(`▶ ${ERAS[idx + 1].name}`);
+      this.eraButtonLabel.setText(`${ERAS[idx + 1].name}`);
       this.eraProgressText.setText('READY');
       this.eraButton.setAlpha(1);
     } else {
-      this.eraButtonLabel.setText(`Advance Era ▶`);
+      this.eraButtonLabel.setText(`Advance Era`);
       const next = ERAS[idx + 1];
       const prog = next.unlockCost.map(r => {
         const pct = Math.min(100, Math.floor((this.economy.state.resources[r.resource] / r.amount) * 100));
@@ -523,7 +527,7 @@ export class UIScene extends Phaser.Scene {
 
   private onEraChanged(era: import('../config/GameData').EraConfig): void {
     this.eraNameText.setText(era.name);
-    this.showNotification(`🎉 Era Advanced: ${era.name}!`);
+    this.showNotification(`Era Advanced: ${era.name}!`);
     this.refreshBuildingPalette();
     this.updateEraButton();
   }
@@ -606,12 +610,10 @@ export class UIScene extends Phaser.Scene {
     const isWin = result.type === 'win';
     const s = this.economy.state;
 
-    // Emoji + title
-    const emoji = isWin ? '🏆' : '💔';
     const title = isWin ? 'INNOVATION HUB ACHIEVED' : 'ECONOMIC COLLAPSE';
     const titleColor = isWin ? '#ffd700' : '#ff4444';
 
-    const titleText = this.add.text(0, -170, `${emoji} ${title}`, {
+    const titleText = this.add.text(0, -170, title, {
       fontFamily: 'Georgia, serif',
       fontSize: '22px',
       color: titleColor,
@@ -657,7 +659,7 @@ export class UIScene extends Phaser.Scene {
     btnBg.strokeRoundedRect(-100, 0, 200, 44, 6);
     btnContainer.add(btnBg);
 
-    const btnText = this.add.text(0, 22, 'PLAY AGAIN ▶', {
+    const btnText = this.add.text(0, 22, 'PLAY AGAIN', {
       fontFamily: 'monospace',
       fontSize: '14px',
       color: '#ffd700',
