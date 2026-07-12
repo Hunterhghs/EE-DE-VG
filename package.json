@@ -1,0 +1,19 @@
+{
+  "name": "eastern-frontier",
+  "version": "0.1.0",
+  "description": "A side-scrolling economic development survival game set in Eastern Europe. Guide a post-Soviet town through transition to innovation hub.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11"
+  }
+}
