@@ -152,8 +152,7 @@ export class GameScene extends Phaser.Scene {
       this.onEraChanged(era);
     };
 
-    // Emit ready signal to UIScene
-    this.events.emit('game-ready', this.economy, this.eraManager);
+    // UIScene accesses economy/eraManager directly
   }
 
   update(time: number, _delta: number): void {

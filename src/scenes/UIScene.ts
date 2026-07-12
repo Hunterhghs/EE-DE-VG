@@ -57,15 +57,12 @@ export class UIScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Access GameScene directly — it's already started before us
     this.gameScene = this.scene.get('GameScene') as GameScene;
-
-    // Wait for game-ready signal
-    this.gameScene.events.on('game-ready', (economy: Economy, eraManager: EraManager) => {
-      this.economy = economy;
-      this.eraManager = eraManager;
-      this.buildUI();
-      this.registerEvents();
-    });
+    this.economy = this.gameScene.economy;
+    this.eraManager = this.gameScene.eraManager;
+    this.buildUI();
+    this.registerEvents();
   }
 
   private buildUI(): void {
